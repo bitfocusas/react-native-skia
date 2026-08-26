@@ -118,11 +118,55 @@ library inventing competing registry.
 registration, exercises native-ID replacement/release, resize/redraw signals,
 and verifies Skia frame via offscreen `QQuickView::grabWindow()`.
 
-## Deferred React Native integration
+## React Native Qt host bridge (explicit opt-in)
 
-This host bridge is **not** React Native component support. It has no linked
-React Native Qt headers or libraries. Fabric component descriptor/view
-registration, TurboModule registration, JSI manager wiring, JS/TS exports,
-input/event bridging, React lifecycle ownership, and production packaging
-remain deferred. Do not register this item as `SkiaPictureView` or claim JSI or
-Fabric rendering support until React Native Qt links those implementations.
+Standalone QML target still has no React Native dependency. Build bridge only
+when host supplies **both** explicit parameters; CMake does not find, fetch, or
+invent React Native Qt/Fabric dependencies:
+
+```sh
+cmake -S packages/skia/qt -B /tmp/rnskia-qt-rn \
+  -DRNSK_QT_SKIA_ROOT=/opt/rnskia-skia-linux \
+  -DRNSK_QT_REACT_NATIVE_INCLUDE_DIRS='/opt/rn/ReactCommon/callinvoker;/opt/rn/ReactCommon/jsi;/opt/rn/ReactCommon;/opt/rn/ReactCommon/react/nativemodule/core;/opt/rn/ReactCommon/runtimeexecutor' \
+  -DRNSK_QT_REACT_NATIVE_LIBRARIES='reactnative;jsi;react_utils'
+cmake --build /tmp/rnskia-qt-rn --target rnskia_qt_react_native
+```
+
+`RNSkQtManager` is explicit host glue. Construct it on injected JSI runtime's
+thread, with React Native Qt's real `CallInvoker`; manager installs upstream
+`RNSkManager` JSI APIs on that runtime. No Fabric discovery, automatic
+component registration, or fake call invoker exists.
+
+```cpp
+#include "RNSkQtManager.h"
+
+// Host owns runtime, callInvoker, and manager lifetime. density comes from
+// mounted item's QQuickWindow, for example window->effectiveDevicePixelRatio().
+auto skiaManager = std::make_unique<RNSkia::RNSkQtManager>(
+    runtime, callInvoker, item->window()->effectiveDevicePixelRatio());
+
+item->setNativeId(1001); // Host mount identity, before attachment.
+skiaManager->attachPictureView(1001, item);
+
+// Host unmount path. Item nativeIdReleased also unregisters this mapping.
+skiaManager->detachPictureView(1001);
+item->releaseNativeId();
+```
+
+Attach each mounted `RNSkQtCanvasItem` after assigning its nonzero `nativeId`.
+On native-ID replacement, item first emits `nativeIdReleased`; host assigns new
+ID then calls `attachPictureView(newId, item)`. `RNSkQtManager` creates common
+`RNSkPictureView`/`RNSkManager` bindings; Qt host remains owner of mount,
+layout, Fabric descriptor/view registration, and call-invoker lifetime.
+
+`RNSkQtPlatformContext` supports queued Qt main-thread dispatch, local plain
+paths, `file://`, and `qrc:/` streams, `qCritical` error logging, CPU raster
+offscreen surfaces, and Skia empty custom font manager (font bytes remain usable
+through upstream APIs). Native-view screenshots, video, native buffers, GPU
+textures, and GPU contexts throw explicit unsupported errors. HTTP/network URIs
+are not loaded.
+
+Fabric component descriptor/view registration, TurboModule registration, JS/TS
+exports, input/event bridging, React lifecycle ownership, and production
+packaging remain host responsibilities. Do not register QML `SkiaCanvas` as
+`SkiaPictureView`; this bridge only attaches host-provided mounted items.
