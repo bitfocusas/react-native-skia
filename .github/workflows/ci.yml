@@ -147,6 +147,76 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  qt-linux-cpu-raster-smoke:
+    if: ${{ github.repository == 'shopify/react-native-skia' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5.0.0
+        with:
+          submodules: false
+
+      - name: Initialize locked Skia source
+        run: git submodule update --init --depth 1 externals/skia
+
+      - name: Verify Qt smoke CI contract
+        run: python3 packages/skia/qt/tests/verify_scaffold.py
+
+      - name: Verify Ubuntu amd64 runner
+        run: test "$(uname -m)" = x86_64
+
+      - name: Install Qt6 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            cmake g++ ninja-build qt6-base-dev qt6-declarative-dev
+
+      - name: Determine locked Skia revision
+        id: skia
+        run: |
+          revision=$(git -C externals/skia rev-parse HEAD)
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Linux CPU-raster Skia build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: externals/skia/out/ci-qt-linux-cpu
+          key: >-
+            ${{ format(
+              '{0}-{1}-qt6-skia-cpu-{2}-{3}', runner.os, runner.arch,
+              steps.skia.outputs.revision,
+              hashFiles('packages/skia/qt/scripts/skia-linux-cpu.gn')) }}
+
+      - name: Bootstrap pinned GN
+        working-directory: externals/skia
+        run: |
+          python3 bin/fetch-gn
+          printf '%s  %s\n' \
+            8fa12442a4d0fc4d754e89ec732aa015cdaf8d4bcbbedf68468c652531ea482c \
+            bin/gn | sha256sum --check --status
+
+      - name: Build Linux CPU-raster Skia artifact
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/rnskia-skia-linux"
+          out_dir="externals/skia/out/ci-qt-linux-cpu"
+          rm -rf "$artifact_dir"
+          mkdir -p "$out_dir" "$artifact_dir/lib"
+          cp packages/skia/qt/scripts/skia-linux-cpu.gn "$out_dir/args.gn"
+          (cd externals/skia && bin/gn gen out/ci-qt-linux-cpu)
+          ninja -C "$out_dir" -j"$(nproc)" skia
+          cp -a externals/skia/include "$artifact_dir/include"
+          install -m 0644 "$out_dir/libskia.a" "$artifact_dir/lib/libskia.a"
+
+      - name: Configure, build, and CTest Qt6 smoke target
+        run: |
+          build_dir="$RUNNER_TEMP/rnskia-qt-build"
+          cmake -S packages/skia/qt -B "$build_dir" -G Ninja \
+            -DRNSK_QT_SKIA_ROOT="$RUNNER_TEMP/rnskia-skia-linux"
+          cmake --build "$build_dir" -j"$(nproc)"
+          ctest --test-dir "$build_dir" --output-on-failure
+
   test-package-e2e:
     if: ${{ github.repository == 'shopify/react-native-skia' }}
     needs: build-library

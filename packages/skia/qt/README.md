@@ -29,11 +29,18 @@ match Qt container C++ ABI and include headers from same Skia revision as
 
 ## Reproducible Linux artifact and smoke test
 
-`qt/scripts/build-linux-cpu-skia.sh` produces this contract from locked
-`externals/skia`, then configures, builds, and CTests Qt smoke target in Qt6
-Linux x86_64 toolchain container. It copies source into container scratch space;
-source checkout stays read-only. Output path must not exist. Artifacts stay
-external.
+`qt-linux-cpu-raster-smoke` CI gate builds this contract from locked
+`externals/skia` on Ubuntu amd64, then configures, builds, and CTests Qt6 smoke
+target. It initializes only Skia submodule, installs Qt6/CMake/Ninja/GCC build
+dependencies, and bootstraps Skia-pinned GN with checksum verification. It does
+not use Docker or developer-local images. Skia build output cache key includes
+runner OS/architecture, locked Skia revision, and `skia-linux-cpu.gn` hash; no
+prefix fallback restores incompatible output. CI artifact is temporary and is
+not published.
+
+`qt/scripts/build-linux-cpu-skia.sh` remains local container harness. It copies
+source into container scratch space; source checkout stays read-only. Output
+path must not exist. Artifacts stay external.
 
 ```sh
 git submodule update --init externals/skia externals/depot_tools
