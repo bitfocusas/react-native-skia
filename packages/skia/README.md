@@ -7,3 +7,9 @@ High-performance 2d Graphics for React Native using Skia
 Checkout the full documentation [here](https://shopify.github.io/react-native-skia).
 
 Documentation on the library development is available [here](https://github.com/Shopify/react-native-skia#library-development).
+
+## Qt6 phase-1 scaffold
+
+[Qt6 CPU-raster canvas smoke scaffold](qt/README.md) documents external Linux
+Skia artifact contract and headless smoke test. It is not Fabric/JSI or React
+Native component integration.
