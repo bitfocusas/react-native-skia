@@ -21,6 +21,8 @@ def main() -> None:
     item = ROOT / "RNSkQtCanvasItem.cpp"
     smoke = ROOT / "tests" / "QtCanvasSmokeTest.cpp"
     docs = ROOT / "README.md"
+    build_script = ROOT / "scripts" / "build-linux-cpu-skia.sh"
+    gn_args = ROOT / "scripts" / "skia-linux-cpu.gn"
 
     require(cmake, "RNSK_QT_SKIA_ROOT")
     require(cmake, "lib/libskia.a")
@@ -36,6 +38,24 @@ def main() -> None:
     require(smoke, "hasNonTransparentPixel")
     require(docs, "Fabric component")
     require(docs, "JSI manager wiring")
+    require(docs, "manifest.json")
+    require(build_script, "@sha256:")
+    require(build_script, "GN_SHA256")
+    require(build_script, "sha256sum --check --status")
+    require(build_script, "ctest --test-dir")
+    require(build_script, "--mount")
+    require(build_script, "readonly")
+    for setting in (
+        "skia_enable_ganesh = false",
+        "skia_enable_graphite = false",
+        "skia_use_gl = false",
+        "skia_use_vulkan = false",
+        "skia_use_dawn = false",
+        "skia_use_angle = false",
+        "skia_use_egl = false",
+        "skia_use_x11 = false",
+    ):
+        require(gn_args, setting)
 
 
 if __name__ == "__main__":

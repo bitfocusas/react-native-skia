@@ -25,10 +25,40 @@ $RNSK_QT_SKIA_ROOT/
 Build artifact with CPU raster enabled and every GPU backend disabled. It must
 match Qt container C++ ABI and include headers from same Skia revision as
 `libskia.a`. Supply static-library transitive dependencies with
-`RNSK_QT_SKIA_SYSTEM_LIBRARIES`; exact set depends on Skia build, commonly
-`fontconfig;freetype;png;z;dl;pthread`.
+`RNSK_QT_SKIA_SYSTEM_LIBRARIES` only when providing a different artifact.
 
-## Build and run smoke test
+## Reproducible Linux artifact and smoke test
+
+`qt/scripts/build-linux-cpu-skia.sh` produces this contract from locked
+`externals/skia`, then configures, builds, and CTests Qt smoke target in Qt6
+Linux x86_64 toolchain container. It copies source into container scratch space;
+source checkout stays read-only. Output path must not exist. Artifacts stay
+external.
+
+```sh
+git submodule update --init externals/skia externals/depot_tools
+packages/skia/qt/scripts/build-linux-cpu-skia.sh /tmp/rnskia-skia-linux
+```
+
+Script requires immutable image reference. Default is pinned local Qt toolchain
+image `react-native-qt@sha256:88a75994099e6e91034fd29def5a2cf719aa5d5d8254e7d1af9b14c8f4dee8a6`.
+Override only with digest, never mutable tag:
+
+```sh
+RNSK_QT_DOCKER_IMAGE='registry.example/qt6@sha256:...' \
+  packages/skia/qt/scripts/build-linux-cpu-skia.sh /tmp/rnskia-skia-linux
+```
+
+Build uses `skia-linux-cpu.gn`: Ganesh, Graphite, GL, Vulkan, Dawn, ANGLE,
+EGL, X11, codecs, and system font backends are disabled. Bare `depot_tools`
+GN wrapper expects a separately bootstrapped GN binary, so script uses locked
+Skia checkout's `bin/fetch-gn`; downloaded pinned GN binary is SHA-256 checked
+before execution. Result contains
+`skia-args.gn` and `manifest.json` with locked Skia revision, image digest, GN
+checksum, and artifact checksums. Keep manifest with artifact; verify it before
+external distribution.
+
+To test a separately supplied artifact:
 
 ```sh
 cmake -S packages/skia/qt -B /tmp/rnskia-qt-build \
