@@ -23,7 +23,10 @@ def forbid(path: Path, text: str) -> None:
 def main() -> None:
     cmake = ROOT / "CMakeLists.txt"
     item = ROOT / "RNSkQtCanvasItem.cpp"
+    registration = ROOT / "RNSkQtQmlRegistration.cpp"
+    registration_header = ROOT / "RNSkQtQmlRegistration.h"
     smoke = ROOT / "tests" / "QtCanvasSmokeTest.cpp"
+    qml_integration = ROOT / "tests" / "QtCanvasQmlIntegrationTest.cpp"
     docs = ROOT / "README.md"
     build_script = ROOT / "scripts" / "build-linux-cpu-skia.sh"
     gn_args = ROOT / "scripts" / "skia-linux-cpu.gn"
@@ -36,11 +39,20 @@ def main() -> None:
     require(item, "SkSurfaces::Raster")
     require(item, "QSGSimpleTextureNode")
     require(item, "createTextureFromImage")
+    require(item, "nativeIdReleased")
+    require(item, "redrawRequested")
+    require(registration, "qmlRegisterType<RNSkQtCanvasItem>")
+    require(registration_header, "org.shopify.RNSkia")
     forbid(item, "GrDirectContext")
     forbid(item, "GrBackend")
     forbid(item, "Dawn")
     require(smoke, "drawsResizesRedrawsAndSnapshots")
     require(smoke, "hasNonTransparentPixel")
+    require(qml_integration, "registersQmlTypeAndRendersOffscreen")
+    require(qml_integration, "QQuickView")
+    require(qml_integration, "grabWindow")
+    require(docs, "registerRNSkiaQtTypes")
+    require(docs, "nativeIdReleased")
     require(docs, "Fabric component")
     require(docs, "JSI manager wiring")
     require(docs, "manifest.json")

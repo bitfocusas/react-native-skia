@@ -1,13 +1,13 @@
-# Qt6 CPU Raster Canvas Smoke Scaffold
+# Qt6 CPU Raster Canvas Host Bridge
 
-Phase 1 proves Qt6 can display CPU-raster Skia output through `QQuickItem` and
-`QSGTexture`. `RNSkQtCanvasItem` keeps an in-memory raster `SkSurface`; each
-draw copies a `QImage` snapshot into a scene-graph texture. Skia does not create
-or use Ganesh, Graphite, OpenGL, Vulkan, Metal, or Dawn contexts here.
+CPU-raster Skia output reaches Qt6 through `QQuickItem` and `QSGTexture`.
+`RNSkQtCanvasItem` keeps an in-memory raster `SkSurface`; each draw copies a
+`QImage` snapshot into a scene-graph texture. Skia does not create or use
+Ganesh, Graphite, OpenGL, Vulkan, Metal, or Dawn contexts here.
 
 `RNSkQtCanvasItem::DrawCallback` matches common `RNSkCanvasProvider` callback
 shape (`std::function<void(SkCanvas *)>`), without pulling React Native/JSI
-headers into this standalone Qt smoke target.
+headers into standalone Qt target.
 
 ## External Linux Skia artifact contract
 
@@ -80,10 +80,49 @@ Smoke test draws opaque pixels, resizes CPU raster surface, redraws, and checks
 snapshot dimensions plus pixels. `QSG_RHI_BACKEND=software` keeps Qt headless
 scene graph on software backend; no Skia GPU path exists in target.
 
-## Deferred integration
+## Qt host registration and lifecycle bridge
 
-This scaffold is **not** React Native component support. Fabric component
-descriptor/view registration, TurboModule registration, JSI manager wiring,
-JS/TS exports, input/event bridging, lifecycle ownership, and production
-packaging remain deferred. Do not register this item as `SkiaPictureView` or
-claim React Native rendering support from phase 1.
+Qt hosts call `RNSkia::registerRNSkiaQtTypes()` before loading QML. It registers
+one reusable QML type: `SkiaCanvas` in `org.shopify.RNSkia 1.0`.
+
+```qml
+import QtQuick 2.15
+import org.shopify.RNSkia 1.0
+
+SkiaCanvas {
+  nativeId: 1001
+  width: 320
+  height: 180
+}
+```
+
+`nativeId` is nonnegative integer host identity, matching numeric identity used
+by `RNSkView`/`RNSkManager`; it is not QML object ID or React `nativeID` string.
+Host must connect lifecycle signals before assigning ID:
+
+- `nativeIdChanged(id)`: ID assigned, replaced, or cleared (`0`).
+- `nativeIdReleased(id)`: previous nonzero ID must be detached. Emitted before
+  replacement, `releaseNativeId()`, and item destruction.
+- `surfaceSizeChanged(pixelWidth, pixelHeight)`: CPU surface resized after Qt
+  geometry/device-pixel-ratio change.
+- `redrawRequested(id)`: emitted by `requestRedraw()`. Host renders through
+  `renderToCanvas()` then Qt schedules scene-graph update.
+
+`releaseNativeId()` is explicit unmount path. `RNSkQtCanvasItem` also releases
+remaining ID during destruction. `renderToCanvas()` remains native C++ API;
+QML cannot supply arbitrary Skia callback. This lets React Native Qt host map
+its own mounted view lifecycle, renderer, and manager onto item without this
+library inventing competing registry.
+
+`rnskia_qt_canvas_qml_integration` loads `SkiaCanvas` from QML through explicit
+registration, exercises native-ID replacement/release, resize/redraw signals,
+and verifies Skia frame via offscreen `QQuickView::grabWindow()`.
+
+## Deferred React Native integration
+
+This host bridge is **not** React Native component support. It has no linked
+React Native Qt headers or libraries. Fabric component descriptor/view
+registration, TurboModule registration, JSI manager wiring, JS/TS exports,
+input/event bridging, React lifecycle ownership, and production packaging
+remain deferred. Do not register this item as `SkiaPictureView` or claim JSI or
+Fabric rendering support until React Native Qt links those implementations.

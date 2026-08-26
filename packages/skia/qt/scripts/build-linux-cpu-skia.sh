@@ -14,7 +14,7 @@ inside_container() {
   local work stage
   work="$(mktemp -d /tmp/rnskia-qt-skia.XXXXXX)"
   stage="$(mktemp -d "${RNSK_QT_ARTIFACT_DIR}.tmp.XXXXXX")"
-  trap 'rm -rf "$work" "$stage"' EXIT
+  trap "rm -rf '$work' '$stage'" EXIT
 
   cp -a /source/externals/skia/. "$work/skia"
   cp /source/packages/skia/qt/scripts/skia-linux-cpu.gn "$work/args.gn"
@@ -23,6 +23,7 @@ inside_container() {
   python3 bin/fetch-gn
   printf '%s  %s\n' "$GN_SHA256" bin/gn | sha256sum --check --status ||
     fail "Skia GN checksum mismatch"
+  rm -rf out
   mkdir out
   cp "$work/args.gn" out/args.gn
   bin/gn gen out

@@ -27,7 +27,7 @@ if(NOT EXISTS "${RNSK_QT_SKIA_LIBRARY}")
     "Missing ${RNSK_QT_SKIA_LIBRARY} in RNSK_QT_SKIA_ROOT.")
 endif()
 
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Quick)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Qml Quick)
 
 add_library(rnskia_qt_skia STATIC IMPORTED GLOBAL)
 set_target_properties(rnskia_qt_skia PROPERTIES
@@ -36,11 +36,13 @@ set_target_properties(rnskia_qt_skia PROPERTIES
 
 add_library(rnskia_qt_canvas STATIC
   RNSkQtCanvasItem.cpp
-  RNSkQtCanvasItem.h)
+  RNSkQtCanvasItem.h
+  RNSkQtQmlRegistration.cpp
+  RNSkQtQmlRegistration.h)
 target_compile_features(rnskia_qt_canvas PUBLIC cxx_std_17)
 target_include_directories(rnskia_qt_canvas PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(rnskia_qt_canvas
-  PUBLIC Qt6::Core Qt6::Gui Qt6::Quick rnskia_qt_skia
+  PUBLIC Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick rnskia_qt_skia
          ${RNSK_QT_SKIA_SYSTEM_LIBRARIES})
 
 if(RNSK_QT_BUILD_SMOKE)
@@ -49,6 +51,14 @@ if(RNSK_QT_BUILD_SMOKE)
   add_executable(rnskia_qt_canvas_smoke tests/QtCanvasSmokeTest.cpp)
   target_link_libraries(rnskia_qt_canvas_smoke PRIVATE rnskia_qt_canvas Qt6::Test)
   add_test(NAME rnskia_qt_canvas_smoke COMMAND rnskia_qt_canvas_smoke)
-  set_tests_properties(rnskia_qt_canvas_smoke PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QSG_RHI_BACKEND=software")
+
+  add_executable(rnskia_qt_canvas_qml_integration
+    tests/QtCanvasQmlIntegrationTest.cpp)
+  target_link_libraries(rnskia_qt_canvas_qml_integration
+    PRIVATE rnskia_qt_canvas Qt6::Test)
+  add_test(NAME rnskia_qt_canvas_qml_integration
+    COMMAND rnskia_qt_canvas_qml_integration)
+
+  set_tests_properties(rnskia_qt_canvas_smoke rnskia_qt_canvas_qml_integration
+    PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QSG_RHI_BACKEND=software")
 endif()

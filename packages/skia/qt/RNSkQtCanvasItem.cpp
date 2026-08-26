@@ -14,17 +14,46 @@ namespace RNSkia {
 
 RNSkQtCanvasItem::RNSkQtCanvasItem() {
   setFlag(ItemHasContents, true);
+  connect(this, &QQuickItem::windowChanged, this, [this](QQuickWindow *) {
+    ensureRasterSurface();
+    update();
+  });
 }
 
-RNSkQtCanvasItem::~RNSkQtCanvasItem() = default;
+RNSkQtCanvasItem::~RNSkQtCanvasItem() {
+  releaseNativeId();
+}
 
 qreal RNSkQtCanvasItem::devicePixelRatio() const {
   return window() == nullptr ? 1.0 : window()->effectiveDevicePixelRatio();
 }
 
+int RNSkQtCanvasItem::nativeId() const { return nativeId_; }
+
+void RNSkQtCanvasItem::setNativeId(int nativeId) {
+  nativeId = std::max(0, nativeId);
+  if (nativeId == nativeId_) {
+    return;
+  }
+  if (nativeId_ != 0) {
+    emit nativeIdReleased(nativeId_);
+  }
+  nativeId_ = nativeId;
+  emit nativeIdChanged(nativeId_);
+}
+
 int RNSkQtCanvasItem::pixelWidth() const { return pixelWidth_; }
 
 int RNSkQtCanvasItem::pixelHeight() const { return pixelHeight_; }
+
+void RNSkQtCanvasItem::releaseNativeId() {
+  setNativeId(0);
+}
+
+void RNSkQtCanvasItem::requestRedraw() {
+  emit redrawRequested(nativeId_);
+  update();
+}
 
 void RNSkQtCanvasItem::ensureRasterSurface() {
   const auto scale = devicePixelRatio();
@@ -41,6 +70,7 @@ void RNSkQtCanvasItem::ensureRasterSurface() {
       ? SkSurfaces::Raster(SkImageInfo::MakeN32Premul(width, height))
       : nullptr;
   textureDirty_ = true;
+  emit surfaceSizeChanged(pixelWidth_, pixelHeight_);
 }
 
 bool RNSkQtCanvasItem::renderToCanvas(const DrawCallback &draw) {
