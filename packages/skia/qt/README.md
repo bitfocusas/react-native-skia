@@ -19,13 +19,16 @@ $RNSK_QT_SKIA_ROOT/
   include/core/SkCanvas.h
   include/core/SkImageInfo.h
   include/core/SkSurface.h
-  lib/libskia.a
+  modules/                     # RNSkManager JSI module headers
+  src/                         # RNSkManager-required Skia private headers
+  lib/libskia.a                # CPU core, JSI modules, codecs, dependencies
 ```
 
 Build artifact with CPU raster enabled and every GPU backend disabled. It must
 match Qt container C++ ABI and include headers from same Skia revision as
-`libskia.a`. Supply static-library transitive dependencies with
-`RNSK_QT_SKIA_SYSTEM_LIBRARIES` only when providing a different artifact.
+`libskia.a`. Bridge artifact retains CPU Skottie, SVG, paragraph, JPEG, PNG,
+and WebP APIs required by common `RNSkManager`; it still creates no GPU
+context. Link ICU with `RNSK_QT_SKIA_SYSTEM_LIBRARIES='icuuc;icui18n;icudata'`.
 
 ## Reproducible Linux artifact and smoke test
 
@@ -57,8 +60,9 @@ RNSK_QT_DOCKER_IMAGE='registry.example/qt6@sha256:...' \
 ```
 
 Build uses `skia-linux-cpu.gn`: Ganesh, Graphite, GL, Vulkan, Dawn, ANGLE,
-EGL, X11, codecs, and system font backends are disabled. Bare `depot_tools`
-GN wrapper expects a separately bootstrapped GN binary, so script uses locked
+EGL, X11, and system font backends are disabled. CPU codecs and JSI modules
+are retained. Script fetches only locked Skia DEPS required by those modules.
+Bare `depot_tools` GN wrapper expects a separately bootstrapped GN binary, so script uses locked
 Skia checkout's `bin/fetch-gn`; downloaded pinned GN binary is SHA-256 checked
 before execution. Result contains
 `skia-args.gn` and `manifest.json` with locked Skia revision, image digest, GN
@@ -132,6 +136,42 @@ cmake -S packages/skia/qt -B /tmp/rnskia-qt-rn \
 cmake --build /tmp/rnskia-qt-rn --target rnskia_qt_react_native
 ```
 
+## Persistent React Native Qt integration smoke
+
+> **Status: pending native-link validation.** Qt standalone and QML bridge tests
+> passed against real CPU-raster Skia. RN Qt/Hermes smoke sources, CMake target,
+> and runner script are present but have not completed a full link/CTest run.
+> Expanded Skia archive build exceeded local worker timeout. Do not claim Fabric,
+> TurboModule, or production React Native Qt support until this command passes.
+>
+> Resume without rebuilding unrelated images: retain `/tmp/rnskia-skia-linux`,
+> run `packages/skia/qt/scripts/run-react-native-qt-integration.sh` against it,
+> then capture CMake, linker, and CTest output. If artifact lacks JSI modules,
+> rebuild it using `build-linux-cpu-skia.sh`; its output must include locked
+> `modules/`, `src/`, and merged `libskia.a`.
+
+Build artifact first, then validate bridge against sibling React Native Qt
+worktree's running amd64 toolchain container. Script checks `/src` mount,
+uses installed real Hermes/JSI support libraries, configures explicit include,
+library, and Skia-root parameters, links bridge smoke, and runs it:
+
+```sh
+packages/skia/qt/scripts/build-linux-cpu-skia.sh /tmp/rnskia-skia-linux
+packages/skia/qt/scripts/run-react-native-qt-integration.sh \
+  /tmp/rnskia-skia-linux
+```
+
+Defaults target sibling `../expo-qt6-wayland-deb`, container
+`react-native-qt-qt6-amd64-worktree`, and support prefix
+`/work/rn-support-install`. Override with
+`RNSK_QT_REACT_NATIVE_WORKTREE`, `RNSK_QT_REACT_NATIVE_CONTAINER`, and
+`RNSK_QT_REACT_NATIVE_SUPPORT_DIR`. Source and artifact are copied into
+container's persistent build volume; host checkouts remain unmodified.
+When native-link validation passes, `rnskia_qt_react_native_smoke` will create
+real Hermes runtime and React Native `TestCallInvoker`, install `RNSkManager`
+bindings, attach Qt canvas, and check bindings plus CPU offscreen surface
+creation. This is intended behavior; it is not yet verified end-to-end.
+
 `RNSkQtManager` is explicit host glue. Construct it on injected JSI runtime's
 thread, with React Native Qt's real `CallInvoker`; manager installs upstream
 `RNSkManager` JSI APIs on that runtime. No Fabric discovery, automatic
@@ -170,3 +210,17 @@ Fabric component descriptor/view registration, TurboModule registration, JS/TS
 exports, input/event bridging, React lifecycle ownership, and production
 packaging remain host responsibilities. Do not register QML `SkiaCanvas` as
 `SkiaPictureView`; this bridge only attaches host-provided mounted items.
+
+## Validation record
+
+| Slice | State | Evidence |
+| --- | --- | --- |
+| Qt CPU-raster canvas smoke | passed | Qt6 CMake/CTest with real Linux Skia artifact |
+| QML native-ID lifecycle smoke | passed | Qt6 offscreen CTest with real Linux Skia artifact |
+| Reproducible Linux artifact | passed | locked GN configuration and container build harness |
+| GitHub CI gate | added | upstream-only `qt-linux-cpu-raster-smoke` job; not run from fork branch |
+| RN Qt/Hermes manager smoke | pending | source/CMake/runner added; full native link exceeded local timeout |
+
+Current Qt implementation is CPU-raster only. Ganesh, Graphite, GPU texture
+interop, Wayland GPU scene-graph sharing, and release packaging are out of
+scope until RN Qt/Hermes link validation passes.
