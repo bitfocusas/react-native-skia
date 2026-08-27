@@ -15,7 +15,6 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
-#include "include/ports/SkFontMgr_empty.h"
 
 namespace RNSkia {
 namespace {
@@ -134,7 +133,7 @@ RNSkQtPlatformContext::createVideo(const std::string &) {
 }
 
 sk_sp<SkFontMgr> RNSkQtPlatformContext::createFontMgr() {
-  return SkFontMgr_New_Custom_Empty();
+  return SkFontMgr::RefEmpty();
 }
 
 } // namespace RNSkia

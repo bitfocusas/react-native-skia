@@ -11,7 +11,9 @@ namespace RNSkia {
 
 using frame = std::chrono::duration<int32_t, std::ratio<1, 60>>;
 using ms = std::chrono::duration<float, std::milli>;
-using high_resolution_clock = std::chrono::high_resolution_clock;
+// Frame timing needs monotonic clock. libstdc++ aliases high_resolution_clock to
+// system_clock, unlike libc++, which breaks assignments to steady_clock points.
+using high_resolution_clock = std::chrono::steady_clock;
 
 class RNSkTimingInfo {
 public:

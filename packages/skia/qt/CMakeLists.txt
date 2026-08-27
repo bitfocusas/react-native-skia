@@ -5,6 +5,8 @@ project(RNSkiaQtCanvas LANGUAGES CXX)
 set(CMAKE_AUTOMOC ON)
 
 option(RNSK_QT_BUILD_SMOKE "Build Qt raster canvas smoke test" ON)
+option(RNSK_QT_BUILD_REACT_NATIVE_SMOKE
+  "Build React Native Qt/Hermes bridge smoke test (requires host support package)" OFF)
 
 # React Native Qt host bridge stays out of standalone QML builds. Set both
 # values from host build; no React Native headers or libraries are discovered.
@@ -76,9 +78,11 @@ if(RNSK_QT_REACT_NATIVE_INCLUDE_DIRS OR RNSK_QT_REACT_NATIVE_LIBRARIES)
     "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/api/third_party/SkottieUtils.cpp")
   # Upstream common RNSkManager uses C++20 Skia APIs.
   target_compile_features(rnskia_qt_react_native PUBLIC cxx_std_20)
+  target_compile_definitions(rnskia_qt_react_native PRIVATE RNSK_QT_CPU_RASTER=1)
   target_include_directories(rnskia_qt_react_native
     PUBLIC
       "${CMAKE_CURRENT_SOURCE_DIR}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/rnskia"
       ${RNSK_QT_REACT_NATIVE_INCLUDE_DIRS}
     PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/../cpp"
@@ -89,6 +93,19 @@ if(RNSK_QT_REACT_NATIVE_INCLUDE_DIRS OR RNSK_QT_REACT_NATIVE_LIBRARIES)
   target_link_libraries(rnskia_qt_react_native
     PUBLIC rnskia_qt_canvas
     PRIVATE ${RNSK_QT_REACT_NATIVE_LIBRARIES})
+
+  if(RNSK_QT_BUILD_REACT_NATIVE_SMOKE)
+    enable_testing()
+    find_package(Qt6 6.2 REQUIRED COMPONENTS Test)
+    add_executable(rnskia_qt_react_native_smoke
+      tests/QtReactNativeBridgeSmokeTest.cpp)
+    target_link_libraries(rnskia_qt_react_native_smoke PRIVATE
+      rnskia_qt_react_native Qt6::Test)
+    add_test(NAME rnskia_qt_react_native_smoke
+      COMMAND rnskia_qt_react_native_smoke)
+    set_tests_properties(rnskia_qt_react_native_smoke PROPERTIES
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QSG_RHI_BACKEND=software")
+  endif()
 endif()
 
 if(RNSK_QT_BUILD_SMOKE)

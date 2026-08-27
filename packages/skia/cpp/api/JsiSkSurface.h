@@ -87,7 +87,10 @@ public:
     // submitted work. Required before a native consumer on a different command
     // queue reads this surface's texture via getNativeTextureUnstable(). #3916
     bool sync = syncParam.has_value() && *syncParam;
-#if defined(SK_GRAPHITE)
+#if defined(RNSK_QT_CPU_RASTER)
+    // Raster surfaces have no GPU command queue to flush.
+    (void)sync;
+#elif defined(SK_GRAPHITE)
     // A raster surface (e.g. Skia.Surface.Make) has no Graphite recorder;
     // only Graphite-backed surfaces need to snap and submit a recording.
     if (auto *recorder = surface->recorder()) {

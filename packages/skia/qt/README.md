@@ -138,17 +138,10 @@ cmake --build /tmp/rnskia-qt-rn --target rnskia_qt_react_native
 
 ## Persistent React Native Qt integration smoke
 
-> **Status: pending native-link validation.** Qt standalone and QML bridge tests
-> passed against real CPU-raster Skia. RN Qt/Hermes smoke sources, CMake target,
-> and runner script are present but have not completed a full link/CTest run.
-> Expanded Skia archive build exceeded local worker timeout. Do not claim Fabric,
-> TurboModule, or production React Native Qt support until this command passes.
->
-> Resume without rebuilding unrelated images: retain `/tmp/rnskia-skia-linux`,
-> run `packages/skia/qt/scripts/run-react-native-qt-integration.sh` against it,
-> then capture CMake, linker, and CTest output. If artifact lacks JSI modules,
-> rebuild it using `build-linux-cpu-skia.sh`; its output must include locked
-> `modules/`, `src/`, and merged `libskia.a`.
+> **Status: native-link smoke passed.** Qt standalone, QML lifecycle, and RN
+> Qt/Hermes bridge CTests passed against real CPU-raster Skia. This validates
+> explicit host construction only; it does not validate Fabric, TurboModule, JS
+> exports, GPU rendering, or production packaging.
 
 Build artifact first, then validate bridge against sibling React Native Qt
 worktree's running amd64 toolchain container. Script checks `/src` mount,
@@ -167,10 +160,10 @@ Defaults target sibling `../expo-qt6-wayland-deb`, container
 `RNSK_QT_REACT_NATIVE_WORKTREE`, `RNSK_QT_REACT_NATIVE_CONTAINER`, and
 `RNSK_QT_REACT_NATIVE_SUPPORT_DIR`. Source and artifact are copied into
 container's persistent build volume; host checkouts remain unmodified.
-When native-link validation passes, `rnskia_qt_react_native_smoke` will create
-real Hermes runtime and React Native `TestCallInvoker`, install `RNSkManager`
-bindings, attach Qt canvas, and check bindings plus CPU offscreen surface
-creation. This is intended behavior; it is not yet verified end-to-end.
+`rnskia_qt_react_native_smoke` creates real Hermes runtime and React Native
+`TestCallInvoker`, installs `RNSkManager` bindings, attaches Qt canvas, and
+checks bindings plus CPU offscreen surface creation. This passed with Clang 18,
+installed React Native Qt support libraries, and real CPU-raster Skia artifact.
 
 `RNSkQtManager` is explicit host glue. Construct it on injected JSI runtime's
 thread, with React Native Qt's real `CallInvoker`; manager installs upstream
@@ -219,7 +212,7 @@ packaging remain host responsibilities. Do not register QML `SkiaCanvas` as
 | QML native-ID lifecycle smoke | passed | Qt6 offscreen CTest with real Linux Skia artifact |
 | Reproducible Linux artifact | passed | locked GN configuration and container build harness |
 | GitHub CI gate | added | upstream-only `qt-linux-cpu-raster-smoke` job; not run from fork branch |
-| RN Qt/Hermes manager smoke | pending | source/CMake/runner added; full native link exceeded local timeout |
+| RN Qt/Hermes manager smoke | passed | Clang 18 CMake/link/CTest against installed RN Qt support, Hermes, and real artifact |
 
 Current Qt implementation is CPU-raster only. Ganesh, Graphite, GPU texture
 interop, Wayland GPU scene-graph sharing, and release packaging are out of

@@ -29,7 +29,9 @@ def main() -> None:
     qml_integration = ROOT / "tests" / "QtCanvasQmlIntegrationTest.cpp"
     docs = ROOT / "README.md"
     build_script = ROOT / "scripts" / "build-linux-cpu-skia.sh"
+    rn_integration_script = ROOT / "scripts" / "run-react-native-qt-integration.sh"
     gn_args = ROOT / "scripts" / "skia-linux-cpu.gn"
+    rn_smoke = ROOT / "tests" / "QtReactNativeBridgeSmokeTest.cpp"
     workflow = ROOT.parents[2] / ".github" / "workflows" / "ci.yml"
 
     require(cmake, "RNSK_QT_SKIA_ROOT")
@@ -39,6 +41,8 @@ def main() -> None:
     require(cmake, "RNSK_QT_REACT_NATIVE_INCLUDE_DIRS")
     require(cmake, "RNSK_QT_REACT_NATIVE_LIBRARIES")
     require(cmake, "rnskia_qt_react_native")
+    require(cmake, "rnskia_qt_react_native_smoke")
+    require(cmake, "RNSK_QT_BUILD_REACT_NATIVE_SMOKE")
     require(cmake, "cxx_std_20")
     require(item, "SkSurfaces::Raster")
     require(item, "QSGSimpleTextureNode")
@@ -61,6 +65,7 @@ def main() -> None:
     require(docs, "RNSkQtManager")
     require(docs, "RNSK_QT_REACT_NATIVE_INCLUDE_DIRS")
     require(docs, "attachPictureView")
+    require(docs, "run-react-native-qt-integration.sh")
     require(docs, "manifest.json")
     require(docs, "qt-linux-cpu-raster-smoke")
     require(docs, "developer-local images")
@@ -71,7 +76,7 @@ def main() -> None:
     require(platform_header, "class RNSkQtPlatformContext")
     require(platform, "QMetaObject::invokeMethod")
     require(platform, "SkSurfaces::Raster")
-    require(platform, "SkFontMgr_New_Custom_Empty")
+    require(platform, "SkFontMgr::RefEmpty")
     require(platform, "only supports local")
     require(platform, "unsupported(\"GPU textures\")")
     require(platform, "unsupported(\"native buffers\")")
@@ -84,7 +89,16 @@ def main() -> None:
     require(build_script, "GN_SHA256")
     require(build_script, "sha256sum --check --status")
     require(build_script, "ctest --test-dir")
+    require(build_script, "sync_dep")
+    require(build_script, "skparagraph")
+    require(build_script, "ADDLIB")
     require(build_script, "--mount")
+    require(rn_integration_script, "RNSK_QT_REACT_NATIVE_INCLUDE_DIRS")
+    require(rn_integration_script, "rnskia_qt_react_native_smoke")
+    require(rn_integration_script, "react-native-qt-qt6-amd64-worktree")
+    require(rn_smoke, "makeHermesRuntime")
+    require(rn_smoke, "TestCallInvoker")
+    require(rn_smoke, "attachPictureView")
     require(build_script, "readonly")
     workflow_contents = workflow.read_text()
     qt_job = workflow_contents.split("  qt-linux-cpu-raster-smoke:\n", 1)[1].split(
@@ -117,6 +131,9 @@ def main() -> None:
         "skia_use_angle = false",
         "skia_use_egl = false",
         "skia_use_x11 = false",
+        "skia_enable_skottie = true",
+        "skia_enable_svg = true",
+        "skia_use_harfbuzz = true",
     ):
         require(gn_args, setting)
 

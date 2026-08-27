@@ -20,6 +20,28 @@ inside_container() {
   cp /source/packages/skia/qt/scripts/skia-linux-cpu.gn "$work/args.gn"
 
   cd "$work/skia"
+  # Skottie/SVG/paragraph module builds need these two locked DEPS checkouts.
+  # Fetch only enabled CPU-module dependencies; sync-deps fetches every Skia
+  # platform dependency and needlessly reaches GPU/tool repositories.
+  sync_dep() {
+    local url="$1" revision="$2" directory="$3"
+    git init -q "$directory"
+    git -C "$directory" remote add origin "$url"
+    git -C "$directory" fetch -q --depth 1 origin "$revision"
+    git -C "$directory" checkout -q FETCH_HEAD
+  }
+  sync_dep https://chromium.googlesource.com/external/github.com/libexpat/libexpat.git \
+    6154446fccefbf3ca644894f598969113b0c7bcd third_party/externals/expat
+  sync_dep https://chromium.googlesource.com/external/github.com/harfbuzz/harfbuzz.git \
+    9cb1fee51069b206effb4736e443b038d230789d third_party/externals/harfbuzz
+  sync_dep https://chromium.googlesource.com/chromium/deps/libjpeg_turbo.git \
+    e14cbfaa85529d47f9f55b0f104a579c1061f9ad third_party/externals/libjpeg-turbo
+  sync_dep https://skia.googlesource.com/third_party/libpng.git \
+    d5515b5b8be3901aac04e5bd8bd5c89f287bcd33 third_party/externals/libpng
+  sync_dep https://chromium.googlesource.com/webm/libwebp.git \
+    845d5476a866141ba35ac133f856fa62f0b7445f third_party/externals/libwebp
+  sync_dep https://chromium.googlesource.com/chromium/src/third_party/zlib \
+    646b7f569718921d7d4b5b8e22572ff6c76f2596 third_party/externals/zlib
   python3 bin/fetch-gn
   printf '%s  %s\n' "$GN_SHA256" bin/gn | sha256sum --check --status ||
     fail "Skia GN checksum mismatch"
@@ -27,15 +49,31 @@ inside_container() {
   mkdir out
   cp "$work/args.gn" out/args.gn
   bin/gn gen out
-  ninja -C out -j"${RNSK_QT_SKIA_JOBS:-$(nproc)}" skia
+  # Common RNSkManager binds Skottie, SVG, and paragraph APIs. Build their
+  # CPU-only Skia modules, then merge archive members into artifact's single
+  # libskia.a contract so normal CMake consumers do not manage GN internals.
+  ninja -C out -j"${RNSK_QT_SKIA_JOBS:-$(nproc)}" \
+    skia skottie svg skparagraph
+  {
+    printf 'CREATE %s\n' "$work/libskia-rn.a"
+    find out -type f -name '*.a' -print | while IFS= read -r library; do
+      printf 'ADDLIB %s\n' "$library"
+    done
+    printf 'SAVE\nEND\n'
+  } | ar -M
 
   install -d "$stage/lib"
+  # Common React Native Skia JSI headers include Skia module and private
+  # headers. Preserve them from same locked revision as libskia.a.
   cp -a include "$stage/include"
-  install -m 0644 out/libskia.a "$stage/lib/libskia.a"
+  cp -a modules "$stage/modules"
+  cp -a src "$stage/src"
+  install -m 0644 "$work/libskia-rn.a" "$stage/lib/libskia.a"
   install -m 0644 "$work/args.gn" "$stage/skia-args.gn"
 
   cmake -S /source/packages/skia/qt -B "$work/qt-build" -G Ninja \
-    -DRNSK_QT_SKIA_ROOT="$stage"
+    -DRNSK_QT_SKIA_ROOT="$stage" \
+    -DRNSK_QT_SKIA_SYSTEM_LIBRARIES='icuuc;icui18n;icudata'
   cmake --build "$work/qt-build" -j"${RNSK_QT_SKIA_JOBS:-$(nproc)}"
   ctest --test-dir "$work/qt-build" --output-on-failure
 
@@ -67,6 +105,8 @@ manifest = {
     "target": "linux-x86_64-cpu-raster",
     "files": {
         "include": tree_sha256(root / "include"),
+        "modules": tree_sha256(root / "modules"),
+        "src": tree_sha256(root / "src"),
         "lib/libskia.a": hashlib.sha256((root / "lib/libskia.a").read_bytes()).hexdigest(),
         "skia-args.gn": hashlib.sha256((root / "skia-args.gn").read_bytes()).hexdigest(),
     },
