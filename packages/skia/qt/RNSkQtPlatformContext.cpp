@@ -47,6 +47,14 @@ RNSkQtPlatformContext::RNSkQtPlatformContext(
     float pixelDensity)
     : RNSkPlatformContext(std::move(jsCallInvoker), pixelDensity) {}
 
+RNSkQtPlatformContext::~RNSkQtPlatformContext() { invalidate(); }
+
+void RNSkQtPlatformContext::invalidate() {
+  const auto lifetime = assetOperationLifetime_;
+  std::lock_guard<std::mutex> lock(lifetime->mutex);
+  lifetime->active = false;
+}
+
 void RNSkQtPlatformContext::runOnMainThread(std::function<void()> func) {
   auto *application = QCoreApplication::instance();
   if (application == nullptr) {
@@ -65,7 +73,8 @@ sk_sp<SkImage> RNSkQtPlatformContext::takeScreenshotFromViewTag(size_t) {
 void RNSkQtPlatformContext::performStreamOperation(
     const std::string &sourceUri,
     const std::function<void(std::unique_ptr<SkStreamAsset>)> &op) {
-  std::thread([sourceUri, op]() {
+  const auto lifetime = assetOperationLifetime_;
+  std::thread([sourceUri, op, lifetime]() {
     try {
       QFile file(localPathForUri(sourceUri));
       if (!file.open(QIODevice::ReadOnly)) {
@@ -73,6 +82,10 @@ void RNSkQtPlatformContext::performStreamOperation(
       }
       const QByteArray bytes = file.readAll();
       auto data = SkData::MakeWithCopy(bytes.constData(), bytes.size());
+      std::lock_guard<std::mutex> lock(lifetime->mutex);
+      if (!lifetime->active) {
+        return;
+      }
       op(SkMemoryStream::Make(std::move(data)));
     } catch (const std::exception &error) {
       qCritical().noquote() << "RNSkia Qt:" << error.what();

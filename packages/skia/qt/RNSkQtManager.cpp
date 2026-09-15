@@ -73,6 +73,9 @@ public:
             &runtime, requireCallInvoker(std::move(jsCallInvoker)), context)) {}
 
   ~Impl() {
+    // Prevent detached asset workers from entering JSI callbacks while manager
+    // and Hermes bindings are being released.
+    context->invalidate();
     for (const auto &[nativeId, attached] : views) {
       QObject::disconnect(attached.releasedConnection);
       QObject::disconnect(attached.destroyedConnection);

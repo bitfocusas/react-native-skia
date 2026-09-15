@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "RNSkPlatformContext.h"
@@ -15,7 +16,11 @@ public:
   RNSkQtPlatformContext(
       std::shared_ptr<facebook::react::CallInvoker> jsCallInvoker,
       float pixelDensity);
-  ~RNSkQtPlatformContext() override = default;
+  ~RNSkQtPlatformContext() override;
+
+  // Blocks until any callback already admitted by an asset worker completes.
+  // Manager calls this before Hermes/RNSkManager teardown.
+  void invalidate();
 
   void runOnMainThread(std::function<void()> func) override;
   sk_sp<SkImage> takeScreenshotFromViewTag(size_t tag) override;
@@ -41,6 +46,14 @@ public:
   uint64_t makeTestNativeBuffer(int width, int height) override;
   std::shared_ptr<RNSkVideo> createVideo(const std::string &url) override;
   sk_sp<SkFontMgr> createFontMgr() override;
+
+private:
+  struct AssetOperationLifetime {
+    std::mutex mutex;
+    bool active = true;
+  };
+  std::shared_ptr<AssetOperationLifetime> assetOperationLifetime_ =
+      std::make_shared<AssetOperationLifetime>();
 };
 
 } // namespace RNSkia
