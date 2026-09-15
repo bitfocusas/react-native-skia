@@ -24,6 +24,22 @@ class QtCanvasSmokeTest final : public QObject {
   Q_OBJECT
 
 private slots:
+  void serializesRepeatedResizeDrawAndSnapshot() {
+    RNSkia::RNSkQtCanvasItem item;
+    for (int iteration = 1; iteration <= 32; ++iteration) {
+      const int width = iteration * 3;
+      const int height = iteration * 2;
+      item.setWidth(width);
+      item.setHeight(height);
+      QVERIFY(item.renderToCanvas([iteration](SkCanvas *canvas) {
+        canvas->clear(iteration % 2 == 0 ? SK_ColorRED : SK_ColorBLUE);
+      }));
+      const QImage snapshot = item.makeSnapshot();
+      QCOMPARE(snapshot.size(), QSize(width, height));
+      QVERIFY(hasNonTransparentPixel(snapshot));
+    }
+  }
+
   void drawsResizesRedrawsAndSnapshots() {
     RNSkia::RNSkQtCanvasItem item;
     item.setWidth(32);

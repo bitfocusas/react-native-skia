@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -158,18 +159,19 @@ public:
       std::unordered_map<std::string, RNJsi::ViewProperty> &props) = 0;
 
   void requestRedraw() {
-    if (!_redrawRequested) {
-      _redrawRequested = true;
+    bool expected = false;
+    if (_redrawRequested.compare_exchange_strong(expected, true)) {
       // Capture a weak pointer to this
       auto weakThis = std::weak_ptr<RNSkView>(shared_from_this());
 
       _platformContext->runOnMainThread([weakThis]() {
         // Try to lock the weak pointer
         if (auto strongThis = weakThis.lock()) {
-          // Only proceed if the object still exists
-          if (strongThis->_renderer && strongThis->_redrawRequested) {
+          // Consume current request before drawing. A concurrent request then
+          // queues another redraw instead of being lost at draw completion.
+          if (strongThis->_renderer &&
+              strongThis->_redrawRequested.exchange(false)) {
             strongThis->_renderer->renderImmediate(strongThis->_canvasProvider);
-            strongThis->_redrawRequested = false;
           }
         }
       });
@@ -177,8 +179,8 @@ public:
   }
 
   void redraw() {
+    _redrawRequested.exchange(false);
     _renderer->renderImmediate(_canvasProvider);
-    _redrawRequested = false;
   }
 
   /**

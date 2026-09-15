@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <mutex>
 
 #include <QImage>
 #include <QQuickItem>
@@ -15,7 +16,8 @@ namespace RNSkia {
 // CPU-raster counterpart of RNSkCanvasProvider's render callback contract.
 class RNSkQtCanvasItem : public QQuickItem {
   Q_OBJECT
-  Q_PROPERTY(int nativeId READ nativeId WRITE setNativeId NOTIFY nativeIdChanged)
+  Q_PROPERTY(
+      int nativeId READ nativeId WRITE setNativeId NOTIFY nativeIdChanged)
   Q_PROPERTY(int pixelWidth READ pixelWidth NOTIFY surfaceSizeChanged)
   Q_PROPERTY(int pixelHeight READ pixelHeight NOTIFY surfaceSizeChanged)
 
@@ -54,8 +56,11 @@ protected:
 
 private:
   void ensureRasterSurface();
+  QImage makeSnapshotLocked() const;
   qreal devicePixelRatio() const;
 
+  // GUI draw/resize and scene-graph snapshot can run on different threads.
+  mutable std::mutex rasterMutex_;
   sk_sp<SkSurface> surface_;
   int nativeId_ = 0;
   int pixelWidth_ = 0;

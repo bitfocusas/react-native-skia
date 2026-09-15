@@ -20,9 +20,7 @@ RNSkQtCanvasItem::RNSkQtCanvasItem() {
   });
 }
 
-RNSkQtCanvasItem::~RNSkQtCanvasItem() {
-  releaseNativeId();
-}
+RNSkQtCanvasItem::~RNSkQtCanvasItem() { releaseNativeId(); }
 
 qreal RNSkQtCanvasItem::devicePixelRatio() const {
   return window() == nullptr ? 1.0 : window()->effectiveDevicePixelRatio();
@@ -42,13 +40,17 @@ void RNSkQtCanvasItem::setNativeId(int nativeId) {
   emit nativeIdChanged(nativeId_);
 }
 
-int RNSkQtCanvasItem::pixelWidth() const { return pixelWidth_; }
-
-int RNSkQtCanvasItem::pixelHeight() const { return pixelHeight_; }
-
-void RNSkQtCanvasItem::releaseNativeId() {
-  setNativeId(0);
+int RNSkQtCanvasItem::pixelWidth() const {
+  std::lock_guard<std::mutex> lock(rasterMutex_);
+  return pixelWidth_;
 }
+
+int RNSkQtCanvasItem::pixelHeight() const {
+  std::lock_guard<std::mutex> lock(rasterMutex_);
+  return pixelHeight_;
+}
+
+void RNSkQtCanvasItem::releaseNativeId() { setNativeId(0); }
 
 void RNSkQtCanvasItem::requestRedraw() {
   emit redrawRequested(nativeId_);
@@ -57,45 +59,61 @@ void RNSkQtCanvasItem::requestRedraw() {
 
 void RNSkQtCanvasItem::ensureRasterSurface() {
   const auto scale = devicePixelRatio();
-  const auto width = std::max(0, static_cast<int>(std::ceil(this->width() * scale)));
+  const auto width =
+      std::max(0, static_cast<int>(std::ceil(this->width() * scale)));
   const auto height =
       std::max(0, static_cast<int>(std::ceil(this->height() * scale)));
-  if (width == pixelWidth_ && height == pixelHeight_) {
-    return;
+  bool changed = false;
+  {
+    std::lock_guard<std::mutex> lock(rasterMutex_);
+    if (width == pixelWidth_ && height == pixelHeight_) {
+      return;
+    }
+    pixelWidth_ = width;
+    pixelHeight_ = height;
+    surface_ =
+        width > 0 && height > 0
+            ? SkSurfaces::Raster(SkImageInfo::MakeN32Premul(width, height))
+            : nullptr;
+    textureDirty_ = true;
+    changed = true;
   }
-
-  pixelWidth_ = width;
-  pixelHeight_ = height;
-  surface_ = width > 0 && height > 0
-      ? SkSurfaces::Raster(SkImageInfo::MakeN32Premul(width, height))
-      : nullptr;
-  textureDirty_ = true;
-  emit surfaceSizeChanged(pixelWidth_, pixelHeight_);
+  if (changed) {
+    emit surfaceSizeChanged(width, height);
+  }
 }
 
 bool RNSkQtCanvasItem::renderToCanvas(const DrawCallback &draw) {
   ensureRasterSurface();
-  if (surface_ == nullptr) {
-    return false;
+  {
+    std::lock_guard<std::mutex> lock(rasterMutex_);
+    if (surface_ == nullptr) {
+      return false;
+    }
+    draw(surface_->getCanvas());
+    textureDirty_ = true;
   }
-  draw(surface_->getCanvas());
-  textureDirty_ = true;
   update();
   return true;
 }
 
-QImage RNSkQtCanvasItem::makeSnapshot() const {
+QImage RNSkQtCanvasItem::makeSnapshotLocked() const {
   if (surface_ == nullptr) {
     return {};
   }
-
   QImage image(pixelWidth_, pixelHeight_, QImage::Format_ARGB32_Premultiplied);
-  if (!surface_->readPixels(SkImageInfo::MakeN32Premul(pixelWidth_, pixelHeight_),
-                            image.bits(), image.bytesPerLine(), 0, 0)) {
+  if (!surface_->readPixels(
+          SkImageInfo::MakeN32Premul(pixelWidth_, pixelHeight_), image.bits(),
+          image.bytesPerLine(), 0, 0)) {
     return {};
   }
   image.setDevicePixelRatio(devicePixelRatio());
   return image;
+}
+
+QImage RNSkQtCanvasItem::makeSnapshot() const {
+  std::lock_guard<std::mutex> lock(rasterMutex_);
+  return makeSnapshotLocked();
 }
 
 void RNSkQtCanvasItem::geometryChange(const QRectF &newGeometry,
@@ -108,18 +126,32 @@ void RNSkQtCanvasItem::geometryChange(const QRectF &newGeometry,
 QSGNode *RNSkQtCanvasItem::updatePaintNode(QSGNode *oldNode,
                                            UpdatePaintNodeData *) {
   auto *node = static_cast<QSGSimpleTextureNode *>(oldNode);
-  if (surface_ == nullptr || window() == nullptr) {
+  if (window() == nullptr) {
     delete node;
     return nullptr;
+  }
+
+  QImage snapshot;
+  bool textureDirty = false;
+  {
+    std::lock_guard<std::mutex> lock(rasterMutex_);
+    if (surface_ == nullptr) {
+      delete node;
+      return nullptr;
+    }
+    textureDirty = textureDirty_;
+    if (textureDirty) {
+      snapshot = makeSnapshotLocked();
+      textureDirty_ = false;
+    }
   }
 
   if (node == nullptr) {
     node = new QSGSimpleTextureNode();
     node->setOwnsTexture(true);
   }
-  if (textureDirty_) {
-    node->setTexture(window()->createTextureFromImage(makeSnapshot()));
-    textureDirty_ = false;
+  if (textureDirty) {
+    node->setTexture(window()->createTextureFromImage(snapshot));
   }
   node->setRect(boundingRect());
   return node;
