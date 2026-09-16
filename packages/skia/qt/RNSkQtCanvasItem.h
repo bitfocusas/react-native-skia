@@ -55,7 +55,7 @@ protected:
                            UpdatePaintNodeData *data) override;
 
 private:
-  void ensureRasterSurface();
+  bool ensureRasterSurface();
   QImage makeSnapshotLocked() const;
   qreal devicePixelRatio() const;
 

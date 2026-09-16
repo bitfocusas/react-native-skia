@@ -15,8 +15,10 @@ namespace RNSkia {
 RNSkQtCanvasItem::RNSkQtCanvasItem() {
   setFlag(ItemHasContents, true);
   connect(this, &QQuickItem::windowChanged, this, [this](QQuickWindow *) {
-    ensureRasterSurface();
-    update();
+    if (ensureRasterSurface())
+      requestRedraw();
+    else
+      update();
   });
 }
 
@@ -57,7 +59,7 @@ void RNSkQtCanvasItem::requestRedraw() {
   update();
 }
 
-void RNSkQtCanvasItem::ensureRasterSurface() {
+bool RNSkQtCanvasItem::ensureRasterSurface() {
   const auto scale = devicePixelRatio();
   const auto width =
       std::max(0, static_cast<int>(std::ceil(this->width() * scale)));
@@ -67,7 +69,7 @@ void RNSkQtCanvasItem::ensureRasterSurface() {
   {
     std::lock_guard<std::mutex> lock(rasterMutex_);
     if (width == pixelWidth_ && height == pixelHeight_) {
-      return;
+      return false;
     }
     pixelWidth_ = width;
     pixelHeight_ = height;
@@ -81,6 +83,7 @@ void RNSkQtCanvasItem::ensureRasterSurface() {
   if (changed) {
     emit surfaceSizeChanged(width, height);
   }
+  return changed;
 }
 
 bool RNSkQtCanvasItem::renderToCanvas(const DrawCallback &draw) {
@@ -119,8 +122,10 @@ QImage RNSkQtCanvasItem::makeSnapshot() const {
 void RNSkQtCanvasItem::geometryChange(const QRectF &newGeometry,
                                       const QRectF &oldGeometry) {
   QQuickItem::geometryChange(newGeometry, oldGeometry);
-  ensureRasterSurface();
-  update();
+  if (ensureRasterSurface())
+    requestRedraw();
+  else
+    update();
 }
 
 QSGNode *RNSkQtCanvasItem::updatePaintNode(QSGNode *oldNode,

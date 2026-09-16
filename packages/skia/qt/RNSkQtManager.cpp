@@ -62,6 +62,7 @@ public:
     std::shared_ptr<RNSkPictureView> view;
     QMetaObject::Connection releasedConnection;
     QMetaObject::Connection destroyedConnection;
+    QMetaObject::Connection resizedConnection;
   };
 
   Impl(facebook::jsi::Runtime &runtime,
@@ -79,6 +80,7 @@ public:
     for (const auto &[nativeId, attached] : views) {
       QObject::disconnect(attached.releasedConnection);
       QObject::disconnect(attached.destroyedConnection);
+      QObject::disconnect(attached.resizedConnection);
       manager->unregisterSkiaView(nativeId);
     }
   }
@@ -122,6 +124,13 @@ void RNSkQtManager::attachPictureView(size_t nativeId, RNSkQtCanvasItem *item) {
   attached.destroyedConnection = QObject::connect(
       item, &QObject::destroyed, item,
       [this, nativeId](QObject *) { detachPictureView(nativeId); });
+  const auto weakView = std::weak_ptr<RNSkPictureView>(attached.view);
+  attached.resizedConnection = QObject::connect(
+      item, &RNSkQtCanvasItem::surfaceSizeChanged, item,
+      [weakView](int, int) {
+        if (const auto view = weakView.lock())
+          view->requestRedraw();
+      });
   impl_->views.emplace(nativeId, std::move(attached));
 }
 
@@ -132,6 +141,7 @@ void RNSkQtManager::detachPictureView(size_t nativeId) {
   }
   QObject::disconnect(found->second.releasedConnection);
   QObject::disconnect(found->second.destroyedConnection);
+  QObject::disconnect(found->second.resizedConnection);
   impl_->manager->unregisterSkiaView(nativeId);
   impl_->views.erase(found);
 }
