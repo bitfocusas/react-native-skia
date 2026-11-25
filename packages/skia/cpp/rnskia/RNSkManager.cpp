@@ -30,6 +30,11 @@ RNSkManager::RNSkManager(
 }
 
 RNSkManager::~RNSkManager() {
+  // Release process-static prototype caches while this runtime is alive. A
+  // later runtime may reuse its address and must not see stale JSI objects.
+  if (_jsRuntime != nullptr) {
+    RNJsi::StaticRuntimeAwareCacheBase::releaseAll(*_jsRuntime);
+  }
   // Free up any references
   _viewApi = nullptr;
   _jsRuntime = nullptr;

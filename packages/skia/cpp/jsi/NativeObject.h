@@ -13,6 +13,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "jsi/BoxedNativeObject.h"
 #include "jsi/RuntimeAwareCache.h" // Use Skia's RuntimeAwareCache
@@ -47,6 +48,57 @@ struct PrototypeCacheEntry {
 };
 
 /**
+ * Registry of process-static runtime caches.
+ *
+ * Static caches are keyed by the main runtime pointer. A host that destroys
+ * its runtime and creates a new one can receive the same address from the
+ * allocator; the pointer check alone then hands back a cache whose
+ * jsi::Objects belong to the destroyed runtime (use-after-free in
+ * Object.setPrototypeOf). releaseAll() lets the runtime owner drop those
+ * caches while the runtime is still alive.
+ */
+class StaticRuntimeAwareCacheBase {
+public:
+  StaticRuntimeAwareCacheBase(const StaticRuntimeAwareCacheBase &) = delete;
+  StaticRuntimeAwareCacheBase &
+  operator=(const StaticRuntimeAwareCacheBase &) = delete;
+
+  // Must run on the runtime's thread before the runtime is destroyed.
+  static void releaseAll(jsi::Runtime &runtime) {
+    std::vector<StaticRuntimeAwareCacheBase *> caches;
+    {
+      std::lock_guard<std::mutex> lock(registryMutex());
+      caches = registry();
+    }
+    for (auto *cache : caches) {
+      std::lock_guard<std::mutex> lock(cache->_guard);
+      cache->releaseLocked(&runtime);
+    }
+  }
+
+protected:
+  explicit StaticRuntimeAwareCacheBase(std::mutex &guard) : _guard(guard) {
+    std::lock_guard<std::mutex> lock(registryMutex());
+    registry().push_back(this);
+  }
+  // Static-storage instances live until exit; never unregistered.
+  virtual ~StaticRuntimeAwareCacheBase() = default;
+  virtual void releaseLocked(jsi::Runtime *runtime) = 0;
+
+private:
+  static std::mutex &registryMutex() {
+    static std::mutex mutex;
+    return mutex;
+  }
+  static std::vector<StaticRuntimeAwareCacheBase *> &registry() {
+    static std::vector<StaticRuntimeAwareCacheBase *> caches;
+    return caches;
+  }
+
+  std::mutex &_guard;
+};
+
+/**
  * Wrapper for static RuntimeAwareCache that handles hot reload.
  *
  * When used with static storage (like prototype caches), the cache persists
@@ -55,11 +107,26 @@ struct PrototypeCacheEntry {
  * created for and allocates a new cache when the runtime changes.
  *
  * The old cache is intentionally leaked - we cannot safely destroy JSI
- * objects after their runtime is gone.
+ * objects after their runtime is gone. Owners that know the runtime is about
+ * to go away call StaticRuntimeAwareCacheBase::releaseAll() first, which
+ * destroys the cache while its JSI objects are still valid.
  */
-template <typename T> struct StaticRuntimeAwareCache {
+template <typename T>
+struct StaticRuntimeAwareCache final : StaticRuntimeAwareCacheBase {
+  // `guard` must be held around every get(); releaseAll() takes it too.
+  explicit StaticRuntimeAwareCache(std::mutex &guard)
+      : StaticRuntimeAwareCacheBase(guard) {}
+
   RNJsi::RuntimeAwareCache<T> *cache = nullptr;
   jsi::Runtime *cacheRuntime = nullptr;
+
+  void releaseLocked(jsi::Runtime *runtime) override {
+    if (cache != nullptr && cacheRuntime == runtime) {
+      delete cache;
+      cache = nullptr;
+      cacheRuntime = nullptr;
+    }
+  }
 
   RNJsi::RuntimeAwareCache<T> &get(jsi::Runtime &rt) {
     auto mainRuntime = RNJsi::BaseRuntimeAwareCache::getMainJsRuntime();
@@ -123,7 +190,8 @@ public:
    */
   static RNJsi::RuntimeAwareCache<PrototypeCacheEntry> &
   getPrototypeCache(jsi::Runtime &runtime) {
-    static StaticRuntimeAwareCache<PrototypeCacheEntry> cache;
+    static StaticRuntimeAwareCache<PrototypeCacheEntry> cache(
+        getPrototypeCacheMutex());
     return cache.get(runtime);
   }
 
