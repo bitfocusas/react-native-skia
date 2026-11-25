@@ -181,8 +181,13 @@ auto skiaManager = std::make_unique<RNSkia::RNSkQtManager>(
 item->setNativeId(1001); // Host mount identity, before attachment.
 skiaManager->attachPictureView(1001, item);
 
-// Host unmount path. Item nativeIdReleased also unregisters this mapping.
+// Host detach path, for example a transient remove or failed-transaction
+// rollback. Last picture is retained and restored by the next attach.
 skiaManager->detachPictureView(1001);
+skiaManager->attachPictureView(1001, item);
+
+// Host unmount path. Item nativeIdReleased also releases this mapping.
+skiaManager->releasePictureView(1001);
 item->releaseNativeId();
 ```
 

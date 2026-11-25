@@ -85,9 +85,29 @@ public:
     }
   }
 
+  // Removes registry entry and picture view. Returns last submitted picture.
+  sk_sp<SkPicture> detach(size_t nativeId) {
+    const auto found = views.find(nativeId);
+    if (found == views.end()) {
+      return nullptr;
+    }
+    QObject::disconnect(found->second.releasedConnection);
+    QObject::disconnect(found->second.destroyedConnection);
+    QObject::disconnect(found->second.resizedConnection);
+    auto picture = std::static_pointer_cast<RNSkPictureRenderer>(
+                       found->second.view->getRenderer())
+                       ->getPicture();
+    manager->unregisterSkiaView(nativeId);
+    views.erase(found);
+    return picture;
+  }
+
   std::shared_ptr<RNSkQtPlatformContext> context;
   std::shared_ptr<RNSkManager> manager;
   std::unordered_map<size_t, AttachedView> views;
+  // Pictures of detached, not yet released views. Picture payload stays
+  // JSI-owned elsewhere; this keeps only the last drawn reference.
+  std::unordered_map<size_t, sk_sp<SkPicture>> retainedPictures;
 };
 
 RNSkQtManager::RNSkQtManager(
@@ -104,11 +124,24 @@ void RNSkQtManager::attachPictureView(size_t nativeId, RNSkQtCanvasItem *item) {
     throw std::invalid_argument(
         "attachPictureView requires a nonzero nativeId assigned to its Qt item.");
   }
-  detachPictureView(nativeId);
+  auto retained = impl_->detach(nativeId);
+  if (const auto found = impl_->retainedPictures.find(nativeId);
+      found != impl_->retainedPictures.end()) {
+    if (retained == nullptr) {
+      retained = std::move(found->second);
+    }
+    impl_->retainedPictures.erase(found);
+  }
 
   auto provider = std::make_shared<RNSkQtCanvasProvider>(item);
   auto view = std::make_shared<RNSkPictureView>(impl_->context, provider);
   view->setNativeId(nativeId);
+  if (retained != nullptr) {
+    // Restore before registration: pending JS properties applied by
+    // registerSkiaView still replace the retained picture.
+    std::static_pointer_cast<RNSkPictureRenderer>(view->getRenderer())
+        ->setPicture(std::move(retained));
+  }
   impl_->manager->registerSkiaView(nativeId, view);
 
   Impl::AttachedView attached;
@@ -118,12 +151,12 @@ void RNSkQtManager::attachPictureView(size_t nativeId, RNSkQtCanvasItem *item) {
       item, &RNSkQtCanvasItem::nativeIdReleased, item,
       [this, nativeId](int releasedId) {
         if (releasedId == static_cast<int>(nativeId)) {
-          detachPictureView(nativeId);
+          releasePictureView(nativeId);
         }
       });
   attached.destroyedConnection = QObject::connect(
       item, &QObject::destroyed, item,
-      [this, nativeId](QObject *) { detachPictureView(nativeId); });
+      [this, nativeId](QObject *) { releasePictureView(nativeId); });
   const auto weakView = std::weak_ptr<RNSkPictureView>(attached.view);
   attached.resizedConnection = QObject::connect(
       item, &RNSkQtCanvasItem::surfaceSizeChanged, item,
@@ -135,15 +168,16 @@ void RNSkQtManager::attachPictureView(size_t nativeId, RNSkQtCanvasItem *item) {
 }
 
 void RNSkQtManager::detachPictureView(size_t nativeId) {
-  const auto found = impl_->views.find(nativeId);
-  if (found == impl_->views.end()) {
-    return;
+  if (auto picture = impl_->detach(nativeId); picture != nullptr) {
+    impl_->retainedPictures.insert_or_assign(nativeId, std::move(picture));
+  } else {
+    impl_->retainedPictures.erase(nativeId);
   }
-  QObject::disconnect(found->second.releasedConnection);
-  QObject::disconnect(found->second.destroyedConnection);
-  QObject::disconnect(found->second.resizedConnection);
-  impl_->manager->unregisterSkiaView(nativeId);
-  impl_->views.erase(found);
+}
+
+void RNSkQtManager::releasePictureView(size_t nativeId) {
+  (void)impl_->detach(nativeId);
+  impl_->retainedPictures.erase(nativeId);
 }
 
 std::shared_ptr<RNSkManager> RNSkQtManager::skiaManager() const {

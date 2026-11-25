@@ -10,6 +10,7 @@
 #include <ReactCommon/tests/TestCallInvoker.h>
 #include <hermes/hermes.h>
 
+#include "RNSkJsiViewApi.h"
 #include "RNSkPictureView.h"
 #include "RNSkQtCanvasItem.h"
 #include "RNSkQtManager.h"
@@ -80,6 +81,45 @@ private slots:
     QVERIFY(manager.platformContext()->makeOffscreenSurface(8, 4, false));
 
     manager.detachPictureView(42);
+    item.releaseNativeId();
+  }
+
+  void detachRetainsPictureUntilRelease() {
+    auto runtime = facebook::hermes::makeHermesRuntime();
+    auto callInvoker =
+        std::make_shared<facebook::react::TestCallInvoker>(*runtime);
+    RNSkQtCanvasItem item;
+    item.setWidth(8);
+    item.setHeight(8);
+    item.setNativeId(43);
+    RNSkQtManager manager(*runtime, callInvoker, 1.0f);
+    const auto renderer = [](size_t nativeId) {
+      const auto view = std::static_pointer_cast<RNSkPictureView>(
+          ViewRegistry::getInstance().getView(nativeId));
+      return view == nullptr ? nullptr
+                             : std::static_pointer_cast<RNSkPictureRenderer>(
+                                   view->getRenderer());
+    };
+
+    manager.attachPictureView(43, &item);
+    const auto original = renderer(43);
+    QVERIFY(original != nullptr);
+    SkPictureRecorder recorder;
+    recorder.beginRecording(8, 8);
+    const auto picture = recorder.finishRecordingAsPicture();
+    original->setPicture(picture);
+
+    manager.detachPictureView(43);
+    QVERIFY(renderer(43) == nullptr);
+    manager.attachPictureView(43, &item);
+    const auto restored = renderer(43);
+    QVERIFY(restored != nullptr && restored != original);
+    QCOMPARE(restored->getPicture().get(), picture.get());
+
+    manager.releasePictureView(43);
+    manager.attachPictureView(43, &item);
+    QVERIFY(renderer(43)->getPicture() == nullptr);
+    manager.releasePictureView(43);
     item.releaseNativeId();
   }
 };
