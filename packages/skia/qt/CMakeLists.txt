@@ -101,6 +101,13 @@ if(RNSK_QT_REACT_NATIVE_INCLUDE_DIRS OR RNSK_QT_REACT_NATIVE_LIBRARIES)
       tests/QtReactNativeBridgeSmokeTest.cpp)
     target_link_libraries(rnskia_qt_react_native_smoke PRIVATE
       rnskia_qt_react_native Qt6::Test)
+    # Smoke test reaches RNSkPictureView/ViewRegistry, whose headers use the
+    # common cpp/ include roots.
+    target_include_directories(rnskia_qt_react_native_smoke PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/api"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/jsi"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/utils")
     add_test(NAME rnskia_qt_react_native_smoke
       COMMAND rnskia_qt_react_native_smoke)
     set_tests_properties(rnskia_qt_react_native_smoke PROPERTIES
