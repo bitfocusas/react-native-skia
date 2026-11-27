@@ -122,6 +122,17 @@ library inventing competing registry.
 registration, exercises native-ID replacement/release, resize/redraw signals,
 and verifies Skia frame via offscreen `QQuickView::grabWindow()`.
 
+## Clipping by ancestor items
+
+`RNSkQtCanvasItem` sets no clip and no layer of its own. Its frame is one
+`QSGSimpleTextureNode` covering `boundingRect()`, so ancestor scene-graph clip
+nodes (for example a React Native Qt View with `overflow: 'hidden'`) clip it
+like any other item, on the software and RHI renderers, through redraws and
+resizes. A future GPU path must keep that: render into a texture node (the
+preferred option, which stays an ordinary clipped node), or, if it uses a
+`QSGRenderNode`, honour the `RenderState` scissor and stencil Qt passes to
+`render()`; a render node that ignores them draws outside clipped ancestors.
+
 ## React Native Qt host bridge (explicit opt-in)
 
 Standalone QML target still has no React Native dependency. Build bridge only
